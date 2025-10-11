@@ -182,6 +182,35 @@
     content: ''
     dest: /tmp/pg_hba2.conf
 
+- name: Create entry with users and dbs that are lists
+  postgresql_pg_hba:
+    contype: host
+    dest: /tmp/pg_hba2.conf
+    create: true
+    method: md5
+    address: "2001:db8::1/128"
+    users: "user1,user2,+group"
+    databases: "db1,db2,@file"
+    state: present
+
+- name: Fetch the file
+  fetch:
+    src: /tmp/pg_hba2.conf
+    dest: /tmp/pg_hba2.conf
+    flat: true
+- name: Read pg_hba2.conf
+  set_fact:
+    content: "{{ lookup('file', '/tmp/pg_hba2.conf') }}"
+- debug:
+    var: content
+- assert:
+    that: '"host\t@file\t+group\t2001:db8::1/128\tmd5\nhost\t@file\tuser1\t2001:db8::1/128\tmd5\nhost\t@file\tuser2\t2001:db8::1/128\tmd5\nhost\tdb1\t+group\t2001:db8::1/128\tmd5\nhost\tdb1\tuser1\t2001:db8::1/128\tmd5\nhost\tdb1\tuser2\t2001:db8::1/128\tmd5\nhost\tdb2\t+group\t2001:db8::1/128\tmd5\nhost\tdb2\tuser1\t2001:db8::1/128\tmd5\nhost\tdb2\tuser2\t2001:db8::1/128\tmd5" == content'
+
+- name: ensure test file is empty
+  copy:
+    content: ''
+    dest: /tmp/pg_hba2.conf
+
 - name: Create a rule with the comment 'comment1'
   postgresql_pg_hba:
     contype: host
