@@ -5,6 +5,8 @@
 
 from __future__ import absolute_import, division, print_function
 
+from abc import ABC, abstractmethod
+
 '''
 This module is used to manage postgres pg_hba files with Ansible.
 '''
@@ -504,6 +506,126 @@ def from_rule_list(rule_list):
         else:
             rules.append(PgHbaRule(rule_dict=rule))
     return rules
+
+
+class AbstractField(ABC):
+    """
+    This class is the base class for user and database fields.
+    """
+
+    def __init__(self, token):
+        if not isinstance(token, str):
+            raise TypeError("The 'token' parameter needs to be a string")
+
+        self._value = token
+
+    def __eq__(self, other):
+        return self.value == other.value
+
+    def __str__(self):
+        return self.value
+
+    def __lt__(self, other):
+        """
+        Compare us to another object or a string for ordering
+        :return: True if we are less than the other thing
+        """
+
+        # we can compare to a string by turning it into an object of our class
+        if isinstance(other, str):
+            o = self.__class__(other)
+        # we can obviously compare to an object of our class
+        elif isinstance(other, self.__class__):
+            o = other
+        # otherwise we can't compare
+        else:
+            raise TypeError(f"Can't compare an object of type {other.__class__.__name__} "
+                            f"to an object of type {self.__class__.__name__}")
+
+        # first check for type and special values
+        my_weight = self.get_weight()
+        other_weight = o.get_weight()
+
+        if my_weight < other_weight:
+            return True
+        elif my_weight > other_weight:
+            return False
+        # if we have the same type or special value, compare the strings
+        else:
+            return self.value < o.value
+
+    def _is_regex(self):
+        return self._value.startswith("/")
+
+    def _is_include(self):
+        return self._value.startswith("@")
+
+    @abstractmethod
+    def get_weight(self):
+        """
+        Determines the weight of the value based on the type (e.g. include) and special values (e.g. all)
+        :return: the value as an int
+        """
+        ...
+
+    @property
+    def value(self):
+        return self._value
+
+
+class UserField(AbstractField):
+    """
+    This class represents an entry in the user-field in a line in the pg_hba
+    """
+
+    def __init__(self, token):
+        super().__init__(token)
+
+    def _is_group(self):
+        return self._value.startswith("+")
+
+    def get_weight(self):
+        """
+        Determines the weight of the value based on the type (role, group, regex or include)
+        :return: the value as an int
+        """
+        if self._is_group():
+            return 10
+        elif self._is_regex():
+            return 20
+        elif self._is_include():
+            return 30
+        elif self.value == "all":
+            return 100
+        else:
+            return 0
+
+
+class DbField(AbstractField):
+    """
+    This class represents an entry in the database-field in a line in the pg_hba
+    """
+
+    def __init__(self, token):
+        super().__init__(token)
+
+    def get_weight(self):
+        """
+        Determines the weight of the value based on the type (role, group, regex or include)
+        :return: the value as an int
+        """
+        if self._is_regex():
+            return 20
+        elif self._is_include():
+            return 30
+        elif self.value == "all":
+            return 100
+        elif self.value in ["sameuser", "samerole"]:
+            return 1
+        elif self.value == "replication":
+            return 2
+        else:
+            return 9
 
 
 class PgHbaRule:
